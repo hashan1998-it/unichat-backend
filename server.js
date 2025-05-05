@@ -13,7 +13,8 @@ const corsOptions = {
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://unichat-backend-production.up.railway.app/'
+    'https://unichat-frontend.vercel.app', // Your frontend URL
+    /https:\/\/.*\.vercel\.app$/, // Allow all Vercel preview deployments
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -21,15 +22,16 @@ const corsOptions = {
   optionsSuccessStatus: 200 
 };
 
+// Apply CORS first
+app.use(cors(corsOptions));
 
 // Middleware
-app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-// Socket setup
+// Socket setup - needs to be after CORS setup
 const setupSocket = require('./utils/socket');
-const io = setupSocket(server);
+const io = setupSocket(server, corsOptions); // Pass CORS options to socket
 
 // Export io for use in controllers
 exports.io = io;
