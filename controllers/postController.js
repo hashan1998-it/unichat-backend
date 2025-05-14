@@ -1,5 +1,6 @@
 const Post = require('../models/Post');
 const User = require('../models/User');
+const { uploadToCloudinary } = require('../utils/imageUpload');
 
 // Get the io object from the server
 const io = require('../server').io;
@@ -7,12 +8,16 @@ const io = require('../server').io;
 exports.createPost = async (req, res) => {
   try {
     const { content } = req.body;
-    const image = req.file ? req.file.path : null;
+    let imageUrl = null;
+    
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file, 'posts');
+    }
     
     const post = new Post({
       user: req.user,
       content,
-      image
+      image: imageUrl
     });
     
     await post.save();

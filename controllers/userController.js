@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { uploadToCloudinary } = require('../utils/imageUpload');
 
 
 exports.getProfile = async (req, res) => {
@@ -99,9 +100,11 @@ exports.uploadProfilePicture = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    const imageUrl = await uploadToCloudinary(req.file, 'profile-pictures');
+
     const user = await User.findByIdAndUpdate(
       req.user,
-      { profilePicture: req.file.path },
+      { profilePicture: imageUrl },
       { new: true }
     ).select('-password');
     

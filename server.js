@@ -44,10 +44,7 @@ app.use('/api/search', require('./routes/search'));
 
 // MongoDB connection
 console.log('Attempting to connect to MongoDB...');
-mongoose.connect(process.env.MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000,
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => {
   console.log('MongoDB connected successfully');
 })
