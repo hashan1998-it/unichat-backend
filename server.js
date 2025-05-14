@@ -43,8 +43,27 @@ app.use('/api/posts', require('./routes/post'));
 app.use('/api/search', require('./routes/search'));
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+console.log('Attempting to connect to MongoDB...');
+mongoose.connect(process.env.MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
+.then(() => {
+  console.log('MongoDB connected successfully');
+})
+.catch(err => {
+  console.error('MongoDB connection error details:', {
+    name: err.name,
+    message: err.message,
+    code: err.code,
+    hostname: err.hostname
+  });
+  console.error('Please check:');
+  console.error('1. Your MongoDB Atlas connection string is correct');
+  console.error('2. Your IP address is whitelisted in MongoDB Atlas');
+  console.error('3. Your database user credentials are correct');
+  process.exit(1);
+});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

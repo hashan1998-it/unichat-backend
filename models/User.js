@@ -15,6 +15,15 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    role : {
+        type: String,
+        enum: ['student', 'professor'],
+        default: 'student'
+    },
+    universityId : {
+        type: String,
+        required: true
+    },
     firstName : {
         type: String,
     },
@@ -42,7 +51,7 @@ const userSchema = new mongoose.Schema({
     posts : [
         {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'Post'
+            ref: 'User'
         }
     ],
     createdAt : {
