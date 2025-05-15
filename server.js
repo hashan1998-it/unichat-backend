@@ -56,6 +56,18 @@ app.use('/api/search', require('./routes/search'));
 app.use('/api/notifications', require('./routes/notification'));
 app.use('/api/connections', require('./routes/connection'));
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
+});
+
+// 404 handler - must be after all routes
+app.use((req, res) => {
+  console.log('404 - Not Found:', req.method, req.url);
+  res.status(404).json({ message: 'Route not found', path: req.url });
+})
+
 // Validate MongoDB URI exists
 if (!process.env.MONGODB_URI) {
   console.error('MONGODB_URI is not defined in environment variables');

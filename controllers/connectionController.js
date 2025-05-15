@@ -2,11 +2,16 @@ const ConnectionRequest = require('../models/ConnectionRequest');
 const User = require('../models/User');
 const notificationController = require('./notificationController');
 
+// Helper function to get user ID
+const getUserId = (req) => {
+    return req.user?._id || req.user;
+};
+
 // Send a connection request
 exports.sendRequest = async (req, res) => {
     try {
         const { receiverId } = req.params;
-        const senderId = req.user._id;
+        const senderId = getUserId(req);
 
         console.log('Connection request - Sender:', senderId, 'Receiver:', receiverId);
 
@@ -71,7 +76,12 @@ exports.sendRequest = async (req, res) => {
 
         console.log('Request saved successfully');
 
-        res.status(201).json(request);
+        // Return the populated request
+        const populatedRequest = await ConnectionRequest.findById(request._id)
+            .populate('sender', 'username profilePicture')
+            .populate('receiver', 'username profilePicture');
+
+        res.status(201).json(populatedRequest);
     } catch (error) {
         console.error('Error in sendRequest:', error);
         res.status(500).json({ 
@@ -85,14 +95,17 @@ exports.sendRequest = async (req, res) => {
 exports.acceptRequest = async (req, res) => {
     try {
         const { requestId } = req.params;
-        const userId = req.user._id;
+        const userId = getUserId(req);
 
-        const request = await ConnectionRequest.findById(requestId);
+        const request = await ConnectionRequest.findById(requestId)
+            .populate('sender', 'username profilePicture')
+            .populate('receiver', 'username profilePicture');
+            
         if (!request) {
             return res.status(404).json({ message: 'Request not found' });
         }
 
-        if (request.receiver.toString() !== userId) {
+        if (request.receiver._id.toString() !== userId.toString()) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
@@ -105,21 +118,20 @@ exports.acceptRequest = async (req, res) => {
         await request.save();
 
         // Add users to each other's connections
-        await User.findByIdAndUpdate(request.sender, {
-            $addToSet: { connections: request.receiver }
+        await User.findByIdAndUpdate(request.sender._id, {
+            $addToSet: { connections: request.receiver._id }
         });
-        await User.findByIdAndUpdate(request.receiver, {
-            $addToSet: { connections: request.sender }
+        await User.findByIdAndUpdate(request.receiver._id, {
+            $addToSet: { connections: request.sender._id }
         });
 
         // Create notification for sender
-        const receiver = await User.findById(req.user._id);
         await notificationController.createNotification(
-            request.sender,
-            request.receiver,
+            request.sender._id,
+            request.receiver._id,
             'connection_accepted',
-            `${receiver.username} accepted your connection request`,
-            `/profile/${receiver._id}`
+            `${request.receiver.username} accepted your connection request`,
+            `/profile/${request.receiver._id}`
         );
 
         res.json({ message: 'Connection request accepted' });
@@ -132,14 +144,11 @@ exports.acceptRequest = async (req, res) => {
 // Get pending requests
 exports.getPendingRequests = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const userId = getUserId(req);
         console.log('Getting pending requests for user:', userId);
 
-        // First verify the user exists
-        const user = await User.findById(userId);
-        if (!user) {
-            console.log('User not found:', userId);
-            return res.status(404).json({ message: 'User not found' });
+        if (!userId) {
+            return res.status(401).json({ message: 'User not authenticated' });
         }
 
         const requests = await ConnectionRequest.find({
@@ -147,15 +156,14 @@ exports.getPendingRequests = async (req, res) => {
             status: 'pending'
         }).populate({
             path: 'sender',
-            select: 'username universityId profilePicture',
+            select: 'username universityId profilePicture email role',
             model: 'User'
         });
 
         console.log('Found pending requests:', requests.length);
-        res.json(requests);
+        res.json(requests || []);
     } catch (error) {
         console.error('Error in getPendingRequests:', error);
-        // Send more detailed error information
         res.status(500).json({ 
             message: 'Server error while fetching pending requests',
             error: error.message,
@@ -168,14 +176,14 @@ exports.getPendingRequests = async (req, res) => {
 exports.rejectRequest = async (req, res) => {
     try {
         const { requestId } = req.params;
-        const userId = req.user._id;
+        const userId = getUserId(req);
 
         const request = await ConnectionRequest.findById(requestId);
         if (!request) {
             return res.status(404).json({ message: 'Request not found' });
         }
 
-        if (request.receiver.toString() !== userId) {
+        if (request.receiver.toString() !== userId.toString()) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
@@ -191,4 +199,28 @@ exports.rejectRequest = async (req, res) => {
         console.error('Error rejecting connection request:', error);
         res.status(500).json({ message: 'Error rejecting connection request' });
     }
-}; 
+};
+
+// Cancel a connection request (by sender)
+exports.cancelRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const userId = getUserId(req);
+
+        const request = await ConnectionRequest.findById(requestId);
+        if (!request) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+
+        if (request.sender.toString() !== userId.toString()) {
+            return res.status(403).json({ message: 'Not authorized' });
+        }
+
+        await request.remove();
+
+        res.json({ message: 'Connection request cancelled' });
+    } catch (error) {
+        console.error('Error cancelling connection request:', error);
+        res.status(500).json({ message: 'Error cancelling connection request' });
+    }
+};

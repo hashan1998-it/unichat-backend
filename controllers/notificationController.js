@@ -4,7 +4,9 @@ const User = require('../models/User');
 // Get all notifications for a user
 exports.getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find({ recipient: req.user._id })
+    const userId = req.user._id || req.user;
+    
+    const notifications = await Notification.find({ user: userId })
       .sort({ createdAt: -1 })
       .populate('sender', 'username profilePicture')
       .limit(50);
@@ -19,13 +21,14 @@ exports.getNotifications = async (req, res) => {
 // Mark a notification as read
 exports.markAsRead = async (req, res) => {
   try {
+    const userId = req.user._id || req.user;
     const notification = await Notification.findById(req.params.id);
     
     if (!notification) {
       return res.status(404).json({ message: 'Notification not found' });
     }
 
-    if (notification.recipient.toString() !== req.user._id.toString()) {
+    if (notification.user.toString() !== userId.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -42,8 +45,10 @@ exports.markAsRead = async (req, res) => {
 // Mark all notifications as read
 exports.markAllAsRead = async (req, res) => {
   try {
+    const userId = req.user._id || req.user;
+    
     await Notification.updateMany(
-      { recipient: req.user._id, read: false },
+      { user: userId, read: false },
       { read: true }
     );
 
@@ -57,8 +62,10 @@ exports.markAllAsRead = async (req, res) => {
 // Get unread notification count
 exports.getUnreadCount = async (req, res) => {
   try {
+    const userId = req.user._id || req.user;
+    
     const count = await Notification.countDocuments({
-      recipient: req.user._id,
+      user: userId,
       read: false
     });
 
@@ -69,21 +76,39 @@ exports.getUnreadCount = async (req, res) => {
   }
 };
 
-// Create a notification
+// Create a notification (helper function)
 exports.createNotification = async (recipientId, senderId, type, content, link) => {
   try {
+    // Ensure recipientId is a valid ID
+    if (!recipientId) {
+      throw new Error('Recipient ID is required');
+    }
+    
     const notification = new Notification({
-      recipient: recipientId,
+      user: recipientId,
       sender: senderId,
       type,
       content,
-      link
+      link,
+      read: false
     });
 
     await notification.save();
+    
+    // Emit socket event for real-time notification
+    const io = require('../server').io;
+    
+    // Populate sender information for the socket event
+    const populatedNotification = await Notification.findById(notification._id)
+      .populate('sender', 'username profilePicture');
+    
+    if (io) {
+      io.to(recipientId.toString()).emit('newNotification', populatedNotification);
+    }
+    
     return notification;
   } catch (error) {
     console.error('Error creating notification:', error);
     throw error;
   }
-}; 
+};

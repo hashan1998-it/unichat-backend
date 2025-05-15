@@ -1,14 +1,25 @@
 const Post = require('../models/Post');
 const User = require('../models/User');
 const { uploadToCloudinary } = require('../utils/imageUpload');
+const notificationController = require('./notificationController');
 
 // Get the io object from the server
-const io = require('../server').io;
+let io;
+setTimeout(() => {
+  io = require('../server').io;
+}, 0);
 
 exports.createPost = async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, postType } = req.body;
     let imageUrl = null;
+    
+    console.log('Creating post - User ID:', req.user);
+    console.log('Request body:', req.body);
+    
+    if (!req.user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
     
     if (req.file) {
       imageUrl = await uploadToCloudinary(req.file, 'posts');
@@ -17,7 +28,8 @@ exports.createPost = async (req, res) => {
     const post = new Post({
       user: req.user,
       content,
-      image: imageUrl
+      image: imageUrl,
+      postType: postType || 'general'
     });
     
     await post.save();
@@ -28,11 +40,14 @@ exports.createPost = async (req, res) => {
     // Add post to user
     await User.findByIdAndUpdate(req.user, { $push: { posts: post._id } });
     
-    // Emit socket event
-    io.emit('newPost', post);
+    // Emit socket event if io is available
+    if (io) {
+      io.emit('newPost', post);
+    }
     
     res.status(201).json(post);
   } catch (error) {
+    console.error('Error creating post:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -62,8 +77,8 @@ exports.getUserPosts = async (req, res) => {
     const posts = await Post.find({ user: userId })
       .sort({ createdAt: -1 })
       .populate('user', 'username profilePicture')
-      .populate('likes', 'username profilePicture') // Populate likes with user info
-      .populate('comments.user', 'username profilePicture'); // Populate comment user info
+      .populate('likes', 'username profilePicture')
+      .populate('comments.user', 'username profilePicture');
     
     res.json(posts);
   } catch (error) {
@@ -74,17 +89,43 @@ exports.getUserPosts = async (req, res) => {
 exports.likePost = async (req, res) => {
   try {
     const { postId } = req.params;
+    const userId = req.user._id || req.user;
     
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate('user');
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
     
-    const likeIndex = post.likes.indexOf(req.user);
+    const userIdString = userId.toString();
+    const likeIndex = post.likes.findIndex(like => like.toString() === userIdString);
+    let isLiked = false;
+    
     if (likeIndex > -1) {
+      // Unlike
       post.likes.splice(likeIndex, 1);
     } else {
-      post.likes.push(req.user);
+      // Like
+      post.likes.push(userId);
+      isLiked = true;
+      
+      // Create notification if it's not the user's own post
+      if (post.user._id.toString() !== userIdString) {
+        try {
+          const liker = await User.findById(userId);
+          if (liker) {
+            await notificationController.createNotification(
+              post.user._id,
+              userId,
+              'post_like',
+              `${liker.username} liked your post`,
+              `/post/${postId}`
+            );
+          }
+        } catch (notificationError) {
+          console.error('Error creating notification:', notificationError);
+          // Continue even if notification fails
+        }
+      }
     }
     
     await post.save();
@@ -94,11 +135,14 @@ exports.likePost = async (req, res) => {
     await post.populate('likes', 'username profilePicture');
     await post.populate('comments.user', 'username profilePicture');
     
-    // Emit socket event
-    io.emit('postUpdated', post);
+    // Emit socket event if io is available
+    if (io) {
+      io.emit('postUpdated', post);
+    }
     
     res.json(post);
   } catch (error) {
+    console.error('Error liking post:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -108,13 +152,20 @@ exports.addComment = async (req, res) => {
     const { postId } = req.params;
     const { content } = req.body;
     
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate('user');
     if (!post) {
       return res.status(404).json({ message: 'Post not found' });
     }
     
+    const userId = req.user._id || req.user;
+    const commenter = await User.findById(userId);
+    
+    if (!commenter) {
+      return res.status(404).json({ message: 'Commenter not found' });
+    }
+    
     const comment = {
-      user: req.user,
+      user: userId,
       content,
       createdAt: new Date()
     };
@@ -122,15 +173,40 @@ exports.addComment = async (req, res) => {
     post.comments.push(comment);
     await post.save();
     
-    // Populate the post for response
-    await post.populate('user', 'username profilePicture');
-    await post.populate('comments.user', 'username profilePicture');
+    // Get the saved comment with populated user data
+    const savedPost = await Post.findById(postId)
+      .populate('user', 'username profilePicture')
+      .populate('comments.user', 'username profilePicture');
     
-    // Emit socket event
-    io.emit('newComment', { postId, comment });
+    const savedComment = savedPost.comments[savedPost.comments.length - 1];
     
-    res.json(post);
+    // Create notification if it's not the user's own post
+    if (post.user._id.toString() !== userId.toString()) {
+      try {
+        await notificationController.createNotification(
+          post.user._id,
+          userId,
+          'post_comment',
+          `${commenter.username} commented on your post`,
+          `/post/${postId}`
+        );
+      } catch (notificationError) {
+        console.error('Error creating notification:', notificationError);
+        // Continue even if notification fails
+      }
+    }
+    
+    // Emit socket event with the populated comment if io is available
+    if (io) {
+      io.emit('newComment', { 
+        postId, 
+        comment: savedComment 
+      });
+    }
+    
+    res.json(savedPost);
   } catch (error) {
+    console.error('Error adding comment:', error);
     res.status(500).json({ message: error.message });
   }
 };
