@@ -8,9 +8,23 @@ exports.register = async (req, res) => {
       const { username, email, password, role, universityId } = req.body
 
       // Check if user already exists
-      const existingUser = await User.findOne({ $or: [{ username }, { email }] })
+      const existingUser = await User.findOne({ 
+          $or: [
+              { username }, 
+              { email },
+              { universityId }
+          ] 
+      })
       if (existingUser) {
-          return res.status(400).json({ message: 'User already exists' })
+          if (existingUser.username === username) {
+              return res.status(400).json({ message: 'Username already exists' })
+          }
+          if (existingUser.email === email) {
+              return res.status(400).json({ message: 'Email already exists' })
+          }
+          if (existingUser.universityId === universityId) {
+              return res.status(400).json({ message: 'University ID already exists' })
+          }
       }
 
       // Hash password
@@ -32,21 +46,26 @@ exports.register = async (req, res) => {
       res.status(201).json({ message: 'User registered successfully' })
   } catch (error) {
       console.error(error)
+      if (error.name === 'ValidationError') {
+          const messages = Object.values(error.errors).map(err => err.message)
+          return res.status(400).json({ message: messages[0] })
+      }
       res.status(500).json({ message: 'Server error' })
   }
 }
 
 exports.login = async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { universityId, password } = req.body;
       
-      // Check if email and password are provided
-      if (!email || !password) {
-        return res.status(400).json({ message: 'Email and password are required' });
+      // Check if universityId and password are provided
+      if (!universityId || !password) {
+        return res.status(400).json({ message: 'University ID and password are required' });
       }
       
-      // Find user
-      const user = await User.findOne({ email });
+      
+      // Find user by universityId
+      const user = await User.findOne({ universityId });
       if (!user) {
         return res.status(400).json({ message: 'Invalid credentials' });
       }
@@ -68,6 +87,10 @@ exports.login = async (req, res) => {
       res.json({ token, userId: user._id });
     } catch (error) {
       console.error('Login error:', error);
+      if (error.name === 'ValidationError') {
+        const messages = Object.values(error.errors).map(err => err.message);
+        return res.status(400).json({ message: messages[0] });
+      }
       res.status(500).json({ message: error.message });
     }
   };

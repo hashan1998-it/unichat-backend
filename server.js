@@ -13,8 +13,8 @@ const corsOptions = {
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://unichat-frontend.vercel.app', // Your frontend URL
-    /https:\/\/.*\.vercel\.app$/, // Allow all Vercel preview deployments
+    'https://unichat-frontend.vercel.app', 
+    /https:\/\/.*\.vercel\.app$/, 
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -31,7 +31,7 @@ app.use('/uploads', express.static('uploads'));
 
 // Socket setup - needs to be after CORS setup
 const setupSocket = require('./utils/socket');
-const io = setupSocket(server, corsOptions); // Pass CORS options to socket
+const io = setupSocket(server, corsOptions); 
 
 // Export io for use in controllers
 exports.io = io;
@@ -41,26 +41,14 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/user'));
 app.use('/api/posts', require('./routes/post'));
 app.use('/api/search', require('./routes/search'));
+app.use('/api/notifications', require('./routes/notification'));
+app.use('/api/connections', require('./routes/connection'));
 
 // MongoDB connection
-console.log('Attempting to connect to MongoDB...');
 mongoose.connect(process.env.MONGODB_URI)
 .then(() => {
   console.log('MongoDB connected successfully');
 })
-.catch(err => {
-  console.error('MongoDB connection error details:', {
-    name: err.name,
-    message: err.message,
-    code: err.code,
-    hostname: err.hostname
-  });
-  console.error('Please check:');
-  console.error('1. Your MongoDB Atlas connection string is correct');
-  console.error('2. Your IP address is whitelisted in MongoDB Atlas');
-  console.error('3. Your database user credentials are correct');
-  process.exit(1);
-});
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

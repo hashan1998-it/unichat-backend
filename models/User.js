@@ -22,7 +22,8 @@ const userSchema = new mongoose.Schema({
     },
     universityId : {
         type: String,
-        required: true
+        required: true,
+        unique: true,
     },
     firstName : {
         type: String,
@@ -32,6 +33,7 @@ const userSchema = new mongoose.Schema({
     },
     profilePicture : {
         type: String,
+        default: ''
     },
     bio : {
         type: String,
@@ -54,6 +56,10 @@ const userSchema = new mongoose.Schema({
             ref: 'User'
         }
     ],
+    connections: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
     createdAt : {
         type: Date,
         default: Date.now
