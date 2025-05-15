@@ -224,3 +224,29 @@ exports.cancelRequest = async (req, res) => {
         res.status(500).json({ message: 'Error cancelling connection request' });
     }
 };
+
+exports.cancelRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const userId = getUserId(req);
+
+        const request = await ConnectionRequest.findById(requestId);
+        if (!request) {
+            return res.status(404).json({ message: 'Request not found' });
+        }
+
+        // Allow cancellation if user is either sender or receiver
+        if (request.sender.toString() !== userId.toString() && 
+            request.receiver.toString() !== userId.toString()) {
+            return res.status(403).json({ message: 'Not authorized to cancel this request' });
+        }
+
+        // Delete the request
+        await ConnectionRequest.findByIdAndDelete(requestId);
+
+        res.json({ message: 'Connection request cancelled' });
+    } catch (error) {
+        console.error('Error cancelling connection request:', error);
+        res.status(500).json({ message: 'Error cancelling connection request' });
+    }
+};

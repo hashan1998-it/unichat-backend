@@ -15,7 +15,10 @@ router.post('/accept/:requestId', connectionController.acceptRequest);
 // Reject a connection request
 router.post('/reject/:requestId', connectionController.rejectRequest);
 
+// Cancel a connection request (by sender or receiver)
+router.delete('/cancel/:requestId', connectionController.cancelRequest);
+
 // Get pending requests
 router.get('/pending', connectionController.getPendingRequests);
 
-module.exports = router; 
+module.exports = router;
