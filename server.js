@@ -66,12 +66,10 @@ if (!process.env.MONGODB_URI) {
 // Log sanitized URI for debugging (hide password)
 const sanitizedUri = process.env.MONGODB_URI.replace(/:([^@]+)@/, ':****@');
 console.log('Connecting to MongoDB:', sanitizedUri);
-
-// Define mongooseOptions before using it
 const mongooseOptions = {
   serverSelectionTimeoutMS: 30000, 
   socketTimeoutMS: 45000,
-  family: 4
+  family: 4 
 };
 
 // MongoDB connection with error handling
@@ -79,6 +77,11 @@ mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
 .then(() => {
   console.log('MongoDB connected successfully');
   console.log(`Database: ${process.env.NODE_ENV === 'production' ? 'Production' : 'Development'}`);
+  
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+  });
 })
 .catch((err) => {
   console.error('MongoDB connection error:', err);
@@ -86,7 +89,22 @@ mongoose.connect(process.env.MONGODB_URI, mongooseOptions)
   process.exit(1);
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+// MongoDB connection event handlers
+mongoose.connection.on('connected', () => {
+  console.log('Mongoose connected to MongoDB');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('Mongoose connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose disconnected from MongoDB');
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  await mongoose.connection.close();
+  console.log('MongoDB connection closed due to app termination');
+  process.exit(0);
 });

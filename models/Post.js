@@ -6,6 +6,11 @@ const postSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    postType : {
+        type: String,
+        enum: ['general', 'academic', 'event'],
+        default: 'general'
+    },
     content : {
         type: String,
         required: true

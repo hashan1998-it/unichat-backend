@@ -45,8 +45,8 @@ exports.getFeed = async (req, res) => {
     const posts = await Post.find({ user: { $in: followingIds } })
       .sort({ createdAt: -1 })
       .populate('user', 'username profilePicture')
-      .populate('likes', 'username profilePicture') // Populate likes with user info
-      .populate('comments.user', 'username profilePicture') // Populate comment user info
+      .populate('likes', 'username profilePicture') 
+      .populate('comments.user', 'username profilePicture')
       .limit(20);
     
     res.json(posts);
