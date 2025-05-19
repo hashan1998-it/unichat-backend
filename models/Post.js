@@ -1,30 +1,30 @@
 const mongoose = require('mongoose');
 
 const postSchema = new mongoose.Schema({
-    user : {
+    user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    postType : {
+    postType: {
         type: String,
         enum: ['general', 'academic', 'event'],
         default: 'general'
     },
-    content : {
+    content: {
         type: String,
         required: true
     },
-    image : {
+    image: {
         type: String,
     },
-    likes : [
+    likes: [
         {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
         }
     ],
-    comments : [
+    comments: [
         {
             user: {
                 type: mongoose.Schema.Types.ObjectId,
@@ -41,11 +41,13 @@ const postSchema = new mongoose.Schema({
             }
         }
     ],
-    createdAt : {
+    createdAt: {
         type: Date,
         default: Date.now
     }
+});
 
-})
+// Add text index for content to optimize search queries
+postSchema.index({ content: 'text' });
 
 module.exports = mongoose.model('Post', postSchema);

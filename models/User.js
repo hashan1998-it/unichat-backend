@@ -1,69 +1,74 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-    username : {
-        type: String,
-        unique: true,
-        required: true,
+  username: {
+    type: String,
+    unique: true,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  password: {
+    type: String,
+    required: true,
+  },
+  role: {
+    type: String,
+    enum: ["student", "professor"],
+    default: "student",
+  },
+  universityId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  firstName: {
+    type: String,
+  },
+  lastName: {
+    type: String,
+  },
+  profilePicture: {
+    type: String,
+    default: "",
+  },
+  bio: {
+    type: String,
+  },
+  followers: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
-    email : {
-        type: String,
-        required: true,
-        unique: true
+  ],
+  following: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
-    password : {
-        type: String,
-        required: true
+  ],
+  posts: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
-    role : {
-        type: String,
-        enum: ['student', 'professor'],
-        default: 'student'
+  ],
+  connections: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
-    universityId : {
-        type: String,
-        required: true,
-        unique: true,
-    },
-    firstName : {
-        type: String,
-    },
-    lastName : {
-        type: String,
-    },
-    profilePicture : {
-        type: String,
-        default: ''
-    },
-    bio : {
-        type: String,
-    },
-    followers : [
-        {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User'
-        }
-    ],
-    following : [
-        {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User'
-        }
-    ],
-    posts : [
-        {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User'
-        }
-    ],
-    connections: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    }],
-    createdAt : {
-        type: Date,
-        default: Date.now
-    }
-})
+  ],
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
 
-module.exports = mongoose.model('User', userSchema);
+// Add index for email to optimize auth and search queries
+userSchema.index({ email: 1 });
+
+module.exports = mongoose.model("User", userSchema);
