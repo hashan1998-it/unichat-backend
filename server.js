@@ -76,7 +76,8 @@ if (!process.env.MONGODB_URI) {
 // MongoDB connection with retry logic
 const mongooseOptions = {
   serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 45000
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10,
 };
 
 // Retry connection function
