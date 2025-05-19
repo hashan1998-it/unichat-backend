@@ -89,9 +89,7 @@ if (!process.env.MONGODB_URI) {
   process.exit(1);
 }
 
-// Log sanitized URI for debugging (hide password)
-const sanitizedUri = process.env.MONGODB_URI.replace(/:([^@]+)@/, ":****@");
-console.log("Connecting to MongoDB:", sanitizedUri);
+// Mongoose options for connection
 const mongooseOptions = {
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 45000,
