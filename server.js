@@ -80,7 +80,7 @@ const mongooseOptions = {
   maxPoolSize: 10
 };
 
-const connectWithRetry = async (retries = 5, delay = 5000) => {
+const connectWithRetry = async (retries = 5, delay = 5) => {
   for (let i = 0; i < retries; i++) {
     try {
       await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
