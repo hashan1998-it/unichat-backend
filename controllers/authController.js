@@ -1,9 +1,29 @@
 const User = require('../models/User')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
+const Joi = require('joi')
+
+const registerSchema = Joi.object({
+  username: Joi.string().min(3).max(30).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required(),
+  universityId: Joi.string().required(),
+  role: Joi.string().valid('student', 'professor').required()
+});
+
+const loginSchema = Joi.object({
+  universityId: Joi.string().required(),
+  password: Joi.string().required()
+});
 
 exports.register = async (req, res) => {
   try {
+      // Validate request body
+      const { error } = registerSchema.validate(req.body)
+      if (error) {
+          return res.status(400).json({ message: error.details[0].message })
+      }
+
       // Get user data from request body
       const { username, email, password, role, universityId } = req.body
 
@@ -56,6 +76,11 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
+      // Validate request body
+      const { error } = loginSchema.validate(req.body);
+      if (error) {
+        return res.status(400).json({ message: error.details[0].message });
+      }
       const { universityId, password } = req.body;
       
       // Check if universityId and password are provided
