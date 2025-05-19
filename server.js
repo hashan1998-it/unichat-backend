@@ -50,6 +50,13 @@ app.use('/uploads', express.static('uploads'));
 const setupSocket = require('./utils/socket');
 const io = setupSocket(server, corsOptions); 
 
+// Rate limiting for auth endpoints
+app.use('/api/auth/', rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: 'Too many requests, please try again later.'
+}));
+
 // Export io for use in controllers
 exports.io = io;
 
