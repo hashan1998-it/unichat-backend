@@ -91,9 +91,6 @@ const connectWithRetry = async (retries = 5, delay = 5000) => {
       logger.error(`MongoDB connection attempt ${i + 1} failed: ${err.message}`);
       if (err.code === 'ENOTFOUND' && err.syscall === 'querySrv') {
         logger.error('DNS resolution failed. Please check:');
-        logger.error('- Network connectivity');
-        logger.error('- DNS server configuration (try Google DNS: 8.8.8.8)');
-        logger.error('- MongoDB Atlas cluster status and credentials');
       }
       if (i < retries - 1) {
         logger.info(`Retrying in ${delay / 1000} seconds...`);
