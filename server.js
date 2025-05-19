@@ -43,7 +43,6 @@ app.use(cors(corsOptions));
 
 // Middleware
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
 
 // Socket setup - needs to be after CORS setup
 const setupSocket = require("./utils/socket");
