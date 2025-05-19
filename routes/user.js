@@ -4,6 +4,7 @@ const userController = require("../controllers/userController");
 const auth = require("../middleware/auth");
 const multer = require("multer");
 const User = require("../models/User");
+const path = require("path");
 
 const upload = multer({
   storage: multer.memoryStorage(),

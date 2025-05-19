@@ -3,6 +3,7 @@ const User = require('../models/User');
 const notificationController = require('./notificationController');
 const logger = require('../utils/logger');
 
+
 /**
  * Sends a connection request to another user
  * @param {Object} req - Express request object

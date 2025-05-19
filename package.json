@@ -17,20 +17,19 @@
     "bcrypt": "^5.1.1",
     "cloudinary": "^2.6.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
     "dotenv-flow": "^4.1.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.14.1",
-    "multer": "^1.4.5-lts.2",
     "redis": "^5.0.1",
     "socket.io": "^4.8.1",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
+    "eslint": "^9.27.0",
     "nodemon": "^3.1.10"
   }
 }
