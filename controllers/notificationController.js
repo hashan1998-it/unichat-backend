@@ -4,12 +4,17 @@ const User = require('../models/User');
 // Get all notifications for a user
 exports.getNotifications = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
     const userId = req.user._id || req.user;
     
     const notifications = await Notification.find({ user: userId })
       .sort({ createdAt: -1 })
+      .skip(skip)
       .populate('sender', 'username profilePicture')
-      .limit(50);
+      .limit(limit);
 
     res.json(notifications);
   } catch (error) {

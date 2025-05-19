@@ -51,11 +51,17 @@ exports.createPost = async (req, res) => {
 
 exports.getFeed = async (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
     const user = await User.findById(req.user);
     const followingIds = user.following.concat(req.user);
 
     const posts = await Post.find({ user: { $in: followingIds } })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate("user", "username profilePicture")
       .populate("likes", "username profilePicture")
       .populate("comments.user", "username profilePicture")
