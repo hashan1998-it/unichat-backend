@@ -1,252 +1,223 @@
 const ConnectionRequest = require('../models/ConnectionRequest');
 const User = require('../models/User');
 const notificationController = require('./notificationController');
+const logger = require('../utils/logger');
 
-// Helper function to get user ID
-const getUserId = (req) => {
-    return req.user?._id || req.user;
-};
-
-// Send a connection request
+/**
+ * Sends a connection request to another user
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
 exports.sendRequest = async (req, res) => {
-    try {
-        const { receiverId } = req.params;
-        const senderId = getUserId(req);
+  try {
+    const { receiverId } = req.params;
+    const senderId = req.user._id;
 
-        console.log('Connection request - Sender:', senderId, 'Receiver:', receiverId);
-
-        // Check if receiver exists
-        const receiver = await User.findById(receiverId);
-        if (!receiver) {
-            console.log('Receiver not found:', receiverId);
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        // Check if users are already connected
-        const sender = await User.findById(senderId);
-        if (sender.connections?.includes(receiverId)) {
-            console.log('Users already connected');
-            return res.status(400).json({ message: 'Users are already connected' });
-        }
-
-        // Check if request already exists
-        const existingRequest = await ConnectionRequest.findOne({
-            sender: senderId,
-            receiver: receiverId,
-            status: 'pending'
-        });
-
-        if (existingRequest) {
-            console.log('Request already exists:', existingRequest._id);
-            return res.status(400).json({ message: 'Connection request already sent' });
-        }
-
-        // Check if there was a previously rejected request
-        const previousRequest = await ConnectionRequest.findOne({
-            sender: senderId,
-            receiver: receiverId,
-            status: 'rejected'
-        });
-
-        let request;
-        if (previousRequest) {
-            // Update the previous request to pending
-            previousRequest.status = 'pending';
-            previousRequest.createdAt = new Date();
-            request = await previousRequest.save();
-            console.log('Updated previous request:', request._id);
-        } else {
-            // Create new request
-            request = new ConnectionRequest({
-                sender: senderId,
-                receiver: receiverId
-            });
-            console.log('Creating new request:', request);
-            await request.save();
-        }
-
-        // Create notification for receiver
-        await notificationController.createNotification(
-            receiverId,
-            senderId,
-            'connection_request',
-            `${sender.username} sent you a connection request`,
-            `/profile/${senderId}`
-        );
-
-        console.log('Request saved successfully');
-
-        // Return the populated request
-        const populatedRequest = await ConnectionRequest.findById(request._id)
-            .populate('sender', 'username profilePicture')
-            .populate('receiver', 'username profilePicture');
-
-        res.status(201).json(populatedRequest);
-    } catch (error) {
-        console.error('Error in sendRequest:', error);
-        res.status(500).json({ 
-            message: 'Server error',
-            error: error.message 
-        });
+    const receiver = await User.findById(receiverId);
+    if (!receiver) {
+      throw Object.assign(new Error('User not found'), { status: 404 });
     }
+
+    const sender = await User.findById(senderId);
+    if (sender.connections?.includes(receiverId)) {
+      throw Object.assign(new Error('Users are already connected'), { status: 400 });
+    }
+
+    const existingRequest = await ConnectionRequest.findOne({
+      sender: senderId,
+      receiver: receiverId,
+      status: 'pending'
+    });
+
+    if (existingRequest) {
+      throw Object.assign(new Error('Connection request already sent'), { status: 400 });
+    }
+
+    const previousRequest = await ConnectionRequest.findOne({
+      sender: senderId,
+      receiver: receiverId,
+      status: 'rejected'
+    });
+
+    let request;
+    if (previousRequest) {
+      previousRequest.status = 'pending';
+      previousRequest.createdAt = new Date();
+      request = await previousRequest.save();
+    } else {
+      request = new ConnectionRequest({
+        sender: senderId,
+        receiver: receiverId
+      });
+      await request.save();
+    }
+
+    await notificationController.createNotification(
+      receiverId,
+      senderId,
+      'connection_request',
+      `${sender.username} sent you a connection request`,
+      `/profile/${senderId}`
+    );
+
+    res.status(201).json(request);
+  } catch (error) {
+    logger.error('Send connection request error', { error: error.message });
+    throw error;
+  }
 };
 
-// Accept a connection request
+/**
+ * Accepts a connection request
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
 exports.acceptRequest = async (req, res) => {
-    try {
-        const { requestId } = req.params;
-        const userId = getUserId(req);
+  try {
+    const { requestId } = req.params;
+    const userId = req.user._id;
 
-        const request = await ConnectionRequest.findById(requestId)
-            .populate('sender', 'username profilePicture')
-            .populate('receiver', 'username profilePicture');
-            
-        if (!request) {
-            return res.status(404).json({ message: 'Request not found' });
-        }
-
-        if (request.receiver._id.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Not authorized' });
-        }
-
-        if (request.status !== 'pending') {
-            return res.status(400).json({ message: 'Request already processed' });
-        }
-
-        // Update request status
-        request.status = 'accepted';
-        await request.save();
-
-        // Add users to each other's connections
-        await User.findByIdAndUpdate(request.sender._id, {
-            $addToSet: { connections: request.receiver._id }
-        });
-        await User.findByIdAndUpdate(request.receiver._id, {
-            $addToSet: { connections: request.sender._id }
-        });
-
-        // Create notification for sender
-        await notificationController.createNotification(
-            request.sender._id,
-            request.receiver._id,
-            'connection_accepted',
-            `${request.receiver.username} accepted your connection request`,
-            `/profile/${request.receiver._id}`
-        );
-
-        res.json({ message: 'Connection request accepted' });
-    } catch (error) {
-        console.error('Error accepting connection request:', error);
-        res.status(500).json({ message: 'Error accepting connection request' });
+    const request = await ConnectionRequest.findById(requestId);
+    if (!request) {
+      throw Object.assign(new Error('Request not found'), { status: 404 });
     }
+
+    if (request.receiver.toString() !== userId.toString()) {
+      throw Object.assign(new Error('Not authorized'), { status: 403 });
+    }
+
+    if (request.status !== 'pending') {
+      throw Object.assign(new Error('Request already processed'), { status: 400 });
+    }
+
+    request.status = 'accepted';
+    await request.save();
+
+    await User.findByIdAndUpdate(request.sender, {
+      $addToSet: { connections: request.receiver }
+    });
+    await User.findByIdAndUpdate(request.receiver, {
+      $addToSet: { connections: request.sender }
+    });
+
+    const receiver = await User.findById(req.user._id);
+    await notificationController.createNotification(
+      request.sender,
+      request.receiver,
+      'connection_accepted',
+      `${receiver.username} accepted your connection request`,
+      `/profile/${receiver._id}`
+    );
+
+    res.json({ message: 'Connection request accepted' });
+  } catch (error) {
+    logger.error('Accept connection request error', { error: error.message });
+    throw error;
+  }
 };
 
-// Get pending requests
-exports.getPendingRequests = async (req, res) => {
-    try {
-        const userId = getUserId(req);
-        console.log('Getting pending requests for user:', userId);
-
-        if (!userId) {
-            return res.status(401).json({ message: 'User not authenticated' });
-        }
-
-        const requests = await ConnectionRequest.find({
-            receiver: userId,
-            status: 'pending'
-        }).populate({
-            path: 'sender',
-            select: 'username universityId profilePicture email role',
-            model: 'User'
-        });
-
-        console.log('Found pending requests:', requests.length);
-        res.json(requests || []);
-    } catch (error) {
-        console.error('Error in getPendingRequests:', error);
-        res.status(500).json({ 
-            message: 'Server error while fetching pending requests',
-            error: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
-    }
-};
-
-// Reject a connection request
+/**
+ * Rejects a connection request
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
 exports.rejectRequest = async (req, res) => {
-    try {
-        const { requestId } = req.params;
-        const userId = getUserId(req);
+  try {
+    const { requestId } = req.params;
+    const userId = req.user._id;
 
-        const request = await ConnectionRequest.findById(requestId);
-        if (!request) {
-            return res.status(404).json({ message: 'Request not found' });
-        }
-
-        if (request.receiver.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Not authorized' });
-        }
-
-        if (request.status !== 'pending') {
-            return res.status(400).json({ message: 'Request already processed' });
-        }
-
-        request.status = 'rejected';
-        await request.save();
-
-        res.json({ message: 'Connection request rejected' });
-    } catch (error) {
-        console.error('Error rejecting connection request:', error);
-        res.status(500).json({ message: 'Error rejecting connection request' });
+    const request = await ConnectionRequest.findById(requestId);
+    if (!request) {
+      throw Object.assign(new Error('Request not found'), { status: 404 });
     }
+
+    if (request.receiver.toString() !== userId.toString()) {
+      throw Object.assign(new Error('Not authorized'), { status: 403 });
+    }
+
+    if (request.status !== 'pending') {
+      throw Object.assign(new Error('Request already processed'), { status: 400 });
+    }
+
+    request.status = 'rejected';
+    await request.save();
+
+    res.json({ message: 'Connection request rejected' });
+  } catch (error) {
+    logger.error('Reject connection request error', { error: error.message });
+    throw error;
+  }
 };
 
-// Cancel a connection request (by sender)
+/**
+ * Cancels a pending connection request sent by the user
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
 exports.cancelRequest = async (req, res) => {
-    try {
-        const { requestId } = req.params;
-        const userId = getUserId(req);
+  try {
+    const { requestId } = req.params;
+    const userId = req.user._id;
 
-        const request = await ConnectionRequest.findById(requestId);
-        if (!request) {
-            return res.status(404).json({ message: 'Request not found' });
-        }
-
-        if (request.sender.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Not authorized' });
-        }
-
-        await request.remove();
-
-        res.json({ message: 'Connection request cancelled' });
-    } catch (error) {
-        console.error('Error cancelling connection request:', error);
-        res.status(500).json({ message: 'Error cancelling connection request' });
+    if (!mongoose.Types.ObjectId.isValid(requestId)) {
+      throw Object.assign(new Error('Invalid request ID'), { status: 400 });
     }
+
+    const request = await ConnectionRequest.findById(requestId);
+    if (!request) {
+      throw Object.assign(new Error('Request not found'), { status: 404 });
+    }
+
+    if (request.sender.toString() !== userId.toString()) {
+      throw Object.assign(new Error('Not authorized'), { status: 403 });
+    }
+
+    if (request.status !== 'pending') {
+      throw Object.assign(new Error('Request already processed'), { status: 400 });
+    }
+
+    request.status = 'cancelled';
+    await request.save();
+
+    res.json({ message: 'Connection request cancelled' });
+  } catch (error) {
+    logger.error('Cancel connection request error', { error: error.message });
+    throw error;
+  }
 };
 
-exports.cancelRequest = async (req, res) => {
-    try {
-        const { requestId } = req.params;
-        const userId = getUserId(req);
+/**
+ * Retrieves pending connection requests for the user (sent or received)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.getPendingRequests = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
 
-        const request = await ConnectionRequest.findById(requestId);
-        if (!request) {
-            return res.status(404).json({ message: 'Request not found' });
-        }
+    const requests = await populateUserFields(
+      ConnectionRequest.find({
+        $and: [
+          { status: 'pending' },
+          { $or: [{ sender: userId }, { receiver: userId }] }
+        ]
+      })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    );
 
-        // Allow cancellation if user is either sender or receiver
-        if (request.sender.toString() !== userId.toString() && 
-            request.receiver.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Not authorized to cancel this request' });
-        }
-
-        // Delete the request
-        await ConnectionRequest.findByIdAndDelete(requestId);
-
-        res.json({ message: 'Connection request cancelled' });
-    } catch (error) {
-        console.error('Error cancelling connection request:', error);
-        res.status(500).json({ message: 'Error cancelling connection request' });
-    }
+    res.json(requests);
+  } catch (error) {
+    logger.error('Get pending requests error', { error: error.message });
+    throw error;
+  }
 };

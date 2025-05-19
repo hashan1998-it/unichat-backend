@@ -1,34 +1,86 @@
-const User = require("../models/User");
-const mongoose = require("mongoose");
-const { uploadToCloudinary } = require("../utils/imageUpload");
-const redis = require("redis");
+const User = require('../models/User');
+const mongoose = require('mongoose');
+const { uploadToCloudinary } = require('../utils/imageUpload');
+const redis = require('redis');
+const logger = require('../utils/logger');
 
-const client = redis.createClient({ url: process.env.REDIS_URL });
-client.on("error", (err) => console.log("Redis Client Error", err));
-(async () => {
-  await client.connect();
-})();
+let redisClient = null;
+let redisConnected = false;
+
+const connectRedisWithRetry = async (retries = 3, delay = 5000) => {
+  redisClient = redis.createClient({ url: process.env.REDIS_URL });
+
+  redisClient.on('error', (err) => {
+    logger.error('Redis Client Error:', { message: err.message });
+    if (err.code === 'ECONNREFUSED') {
+      logger.error('Redis connection refused. Please check:', {
+        checks: [
+          'Redis server is running (redis-cli ping)',
+          'REDIS_URL is correct in .env',
+          'Network/firewall allows port 6379'
+        ]
+      });
+    }
+    redisConnected = false;
+  });
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      await redisClient.connect();
+      redisConnected = true;
+      logger.info('Redis connected successfully');
+      return;
+    } catch (err) {
+      logger.error(`Redis connection attempt ${i + 1} failed:`, { message: err.message });
+      if (i < retries - 1) {
+        logger.info(`Retrying Redis connection in ${delay / 1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  logger.error('Redis connection failed after all retries. Falling back to database.');
+  redisConnected = false;
+};
+
+// Initialize Redis connection
+connectRedisWithRetry();
 
 exports.getProfile = async (req, res) => {
   try {
     const cacheKey = `profile:${req.params.id}`;
-    const cached = await client.get(cacheKey);
-    if (cached) {
-      return res.json(JSON.parse(cached));
+    
+    if (redisConnected && redisClient) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
+      } catch (err) {
+        logger.error('Redis get error:', { message: err.message });
+      }
     }
+
     const user = await User.findById(req.params.id)
-      .select("-password")
-      .populate("followers", "username profilePicture")
-      .populate("following", "username profilePicture");
-
+      .select('-password')
+      .populate('followers', 'username profilePicture')
+      .populate('following', 'username profilePicture');
+    
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      throw Object.assign(new Error('User not found'), { status: 404 });
     }
-    await client.setEx(cacheKey, 3600, JSON.stringify(user)); 
-
+    
+    if (redisConnected && redisClient) {
+      try {
+        await redisClient.setEx(cacheKey, 3600, JSON.stringify(user));
+      } catch (err) {
+        logger.error('Redis set error:', { message: err.message });
+      }
+    }
+    
     res.json(user);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error('Get profile error', { error: error.message });
+    throw error;
   }
 };
 
@@ -40,92 +92,99 @@ exports.updateProfile = async (req, res) => {
       req.user,
       { firstName, lastName, bio },
       { new: true }
-    ).select("-password");
+    ).select('-password');
+
+    if (!user) {
+      throw Object.assign(new Error('User not found'), { status: 404 });
+    }
 
     res.json(user);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error('Update profile error', { error: error.message });
+    throw error;
   }
 };
 
 exports.followUser = async (req, res) => {
   try {
     const { userId } = req.params;
+    const currentUserId = req.user;
 
-    if (userId === req.user) {
-      return res.status(400).json({ message: "Cannot follow yourself" });
+    if (userId === currentUserId.toString()) {
+      throw Object.assign(new Error('Cannot follow yourself'), { status: 400 });
     }
 
-    // Update current user's following list
-    const currentUser = await User.findById(req.user);
-    if (!currentUser.following.includes(userId)) {
-      currentUser.following.push(userId);
-      await currentUser.save();
+    const userToFollow = await User.findById(userId);
+    if (!userToFollow) {
+      throw Object.assign(new Error('User not found'), { status: 404 });
     }
 
-    // Update target user's followers list
-    const targetUser = await User.findById(userId);
-    if (!targetUser.followers.includes(req.user)) {
-      targetUser.followers.push(req.user);
-      await targetUser.save();
+    const currentUser = await User.findById(currentUserId);
+    if (currentUser.following.includes(userId)) {
+      throw Object.assign(new Error('Already following this user'), { status: 400 });
     }
 
-    // Return the updated target user with populated followers
-    const updatedTargetUser = await User.findById(userId)
-      .populate("followers", "username profilePicture")
-      .populate("following", "username profilePicture");
+    await User.findByIdAndUpdate(currentUserId, { $addToSet: { following: userId } });
+    await User.findByIdAndUpdate(userId, { $addToSet: { followers: currentUserId } });
 
-    res.json(updatedTargetUser);
+    res.json({ message: 'Followed successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error('Follow user error', { error: error.message });
+    throw error;
   }
 };
 
 exports.unfollowUser = async (req, res) => {
   try {
     const { userId } = req.params;
+    const currentUserId = req.user;
 
-    // Update current user's following list
-    const currentUser = await User.findById(req.user);
-    currentUser.following = currentUser.following.filter(
-      (id) => id.toString() !== userId
-    );
-    await currentUser.save();
+    if (userId === currentUserId.toString()) {
+      throw Object.assign(new Error('Cannot unfollow yourself'), { status: 400 });
+    }
 
-    // Update target user's followers list
-    const targetUser = await User.findById(userId);
-    targetUser.followers = targetUser.followers.filter(
-      (id) => id.toString() !== req.user
-    );
-    await targetUser.save();
+    const userToUnfollow = await User.findById(userId);
+    if (!userToUnfollow) {
+      throw Object.assign(new Error('User not found'), { status: 404 });
+    }
 
-    // Return the updated target user with populated followers
-    const updatedTargetUser = await User.findById(userId)
-      .populate("followers", "username profilePicture")
-      .populate("following", "username profilePicture");
+    const currentUser = await User.findById(currentUserId);
+    if (!currentUser.following.includes(userId)) {
+      throw Object.assign(new Error('Not following this user'), { status: 400 });
+    }
 
-    res.json(updatedTargetUser);
+    await User.findByIdAndUpdate(currentUserId, { $pull: { following: userId } });
+    await User.findByIdAndUpdate(userId, { $pull: { followers: currentUserId } });
+
+    res.json({ message: 'Unfollowed successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error('Unfollow user error', { error: error.message });
+    throw error;
   }
 };
 
 exports.uploadProfilePicture = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
+      throw Object.assign(new Error('No file uploaded'), { status: 400 });
     }
 
-    const imageUrl = await uploadToCloudinary(req.file, "profile-pictures",  { width: 200, height: 200 });
+    const imageUrl = await uploadToCloudinary(req.file, 'profile-pictures', { width: 200, height: 200 });
 
     const user = await User.findByIdAndUpdate(
       req.user,
       { profilePicture: imageUrl },
       { new: true }
-    ).select("-password");
+    ).select('-password');
+    
+    if (!user) {
+      throw Object.assign(new Error('User not found'), { status: 404 });
+    }
 
     res.json(user);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    logger.error('Upload profile picture error', { error: error.message });
+    throw error;
   }
 };
+

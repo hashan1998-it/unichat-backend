@@ -1,14 +1,15 @@
-const User = require('../models/User')
-const bcrypt = require('bcrypt')
-const jwt = require('jsonwebtoken')
-const Joi = require('joi')
+const User = require('../models/User');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const Joi = require('joi');
+const logger = require('../utils/logger');
 
 const registerSchema = Joi.object({
   username: Joi.string().min(3).max(30).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(8).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required(),
   universityId: Joi.string().required(),
-  role: Joi.string().valid('student', 'professor').required()
+  role: Joi.string().valid('student', 'professor').optional()
 });
 
 const loginSchema = Joi.object({
@@ -18,104 +19,81 @@ const loginSchema = Joi.object({
 
 exports.register = async (req, res) => {
   try {
-      // Validate request body
-      const { error } = registerSchema.validate(req.body)
-      if (error) {
-          return res.status(400).json({ message: error.details[0].message })
+    const { error } = registerSchema.validate(req.body);
+    if (error) {
+      logger.debug('Registration validation failed', { error: error.details[0].message });
+      throw Object.assign(new Error(error.details[0].message), { status: 400 });
+    }
+
+    const { username, email, password, role, universityId } = req.body;
+
+    const existingUser = await User.findOne({ 
+      $or: [{ username }, { email }, { universityId }] 
+    });
+    if (existingUser) {
+      if (existingUser.username === username) {
+        throw Object.assign(new Error('Username already exists'), { status: 400 });
       }
-
-      // Get user data from request body
-      const { username, email, password, role, universityId } = req.body
-
-      // Check if user already exists
-      const existingUser = await User.findOne({ 
-          $or: [
-              { username }, 
-              { email },
-              { universityId }
-          ] 
-      })
-      if (existingUser) {
-          if (existingUser.username === username) {
-              return res.status(400).json({ message: 'Username already exists' })
-          }
-          if (existingUser.email === email) {
-              return res.status(400).json({ message: 'Email already exists' })
-          }
-          if (existingUser.universityId === universityId) {
-              return res.status(400).json({ message: 'University ID already exists' })
-          }
+      if (existingUser.email === email) {
+        throw Object.assign(new Error('Email already exists'), { status: 400 });
       }
+      if (existingUser.universityId === universityId) {
+        throw Object.assign(new Error('University ID already exists'), { status: 400 });
+      }
+    }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 12)
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-      // Create new user
-      const newUser = new User({
-          username,
-          email,
-          password: hashedPassword,
-          role: role || 'student',
-          universityId
-      })
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      role: role || 'student',
+      universityId
+    });
 
-      // Save user to database
-      await newUser.save()
+    await newUser.save();
 
-      // Respond with success message
-      res.status(201).json({ message: 'User registered successfully' })
+    res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
-      console.error(error)
-      if (error.name === 'ValidationError') {
-          const messages = Object.values(error.errors).map(err => err.message)
-          return res.status(400).json({ message: messages[0] })
-      }
-      res.status(500).json({ message: 'Server error' })
+    logger.error('Registration error', { error: error.message });
+    throw error;
   }
-}
+};
 
 exports.login = async (req, res) => {
-    try {
-      // Validate request body
-      const { error } = loginSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({ message: error.details[0].message });
-      }
-      const { universityId, password } = req.body;
-      
-      // Check if universityId and password are provided
-      if (!universityId || !password) {
-        return res.status(400).json({ message: 'University ID and password are required' });
-      }
-      
-      
-      // Find user by universityId
-      const user = await User.findOne({ universityId });
-      if (!user) {
-        return res.status(400).json({ message: 'Invalid credentials' });
-      }
-      
-      // Check if password exists in DB
-      if (!user.password) {
-        return res.status(400).json({ message: 'User password not found' });
-      }
-      
-      // Verify password
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ message: 'Invalid credentials' });
-      }
-      
-      // Generate token
-      const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      
-      res.json({ token, userId: user._id });
-    } catch (error) {
-      console.error('Login error:', error);
-      if (error.name === 'ValidationError') {
-        const messages = Object.values(error.errors).map(err => err.message);
-        return res.status(400).json({ message: messages[0] });
-      }
-      res.status(500).json({ message: error.message });
+  try {
+    const { error } = loginSchema.validate(req.body);
+    if (error) {
+      logger.debug('Login validation failed', { error: error.details[0].message });
+      throw Object.assign(new Error(error.details[0].message), { status: 400 });
     }
-  };
+
+    const { universityId, password } = req.body;
+
+    if (!universityId || !password) {
+      throw Object.assign(new Error('University ID and password are required'), { status: 400 });
+    }
+
+    const user = await User.findOne({ universityId });
+    if (!user) {
+      throw Object.assign(new Error('Invalid credentials'), { status: 400 });
+    }
+
+    if (!user.password) {
+      throw Object.assign(new Error('User password not found'), { status: 400 });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      throw Object.assign(new Error('Invalid credentials'), { status: 400 });
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({ token, userId: user._id });
+  } catch (error) {
+    logger.error('Login error', { error: error.message });
+    throw error;
+  }
+};
