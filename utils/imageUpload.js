@@ -8,7 +8,6 @@ const uploadToCloudinary = async (file, folder = 'social-media', options = {}) =
       { fetch_format: 'auto' }
     ];
 
-    // Return a promise to handle the streaming upload
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
@@ -24,7 +23,6 @@ const uploadToCloudinary = async (file, folder = 'social-media', options = {}) =
         }
       );
 
-      // Write the buffer to the stream
       stream.end(file.buffer);
     });
   } catch (error) {

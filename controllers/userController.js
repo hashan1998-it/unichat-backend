@@ -116,7 +116,7 @@ exports.uploadProfilePicture = async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const imageUrl = await uploadToCloudinary(req.file, "profile-pictures");
+    const imageUrl = await uploadToCloudinary(req.file, "profile-pictures",  { width: 200, height: 200 });
 
     const user = await User.findByIdAndUpdate(
       req.user,
